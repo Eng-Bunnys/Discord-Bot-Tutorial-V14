@@ -1,14 +1,17 @@
 const SlashCommand = require("../../utils/slashCommands");
 
+const colors = require("../../GBF/GBFColor.json");
+const emojis = require("../../GBF/GBFEmojis.json");
+const KickSchema = require("../../schemas/Moderation Schemas/Kick Schema");
+const ServerSettings = require("../../schemas/Moderation Schemas/Server Settings");
+const CommandLinks = require("../../GBF/GBFCommands.json");
+
 const {
   ApplicationCommandOptionType,
   PermissionFlagsBits,
   EmbedBuilder
 } = require("discord.js");
-
-const colors = require("../../GBF/GBFColor.json");
-const emojis = require("../../GBF/GBFEmojis.json");
-const KickSchema = require("../../schemas/Moderation Schemas/Kick Schema");
+const { getLastDigits } = require("../../utils/Engine");
 
 module.exports = class KickCommand extends SlashCommand {
   constructor(client) {
@@ -19,7 +22,7 @@ module.exports = class KickCommand extends SlashCommand {
       options: [
         {
           name: "member",
-          description: "The member that you want to kick",
+          description: "The member that you want to kick from this server",
           type: ApplicationCommandOptionType.User,
           required: true
         },
@@ -31,6 +34,7 @@ module.exports = class KickCommand extends SlashCommand {
       ],
 
       devOnly: false,
+      devBypass: false,
       userPermission: [PermissionFlagsBits.KickMembers],
       botPermission: [PermissionFlagsBits.KickMembers],
       cooldown: 0,
@@ -40,37 +44,9 @@ module.exports = class KickCommand extends SlashCommand {
   }
 
   async execute({ client, interaction }) {
-    const targetUser = interaction.options.getUser("member");
+    const targetMember = interaction.options.getMember("member");
     const kickReason =
       interaction.options.getString("reason") || "No Reason Specified";
-
-    const selfKick = new EmbedBuilder()
-      .setTitle(`${emojis.ERROR} You can't do that`)
-      .setColor(colors.ERRORRED)
-      .setDescription(
-        `You can't kick yourself from ${interaction.guild.name}, if you want to leave, there's a leave button.`
-      );
-
-    if (interaction.user.id === targetUser.id)
-      return interaction.reply({
-        embeds: [selfKick],
-        ephemeral: true
-      });
-
-    const botKick = new EmbedBuilder()
-      .setTitle(`${emojis.ERROR} You can't do that`)
-      .setColor(colors.ERRORRED)
-      .setDescription(`I can't kick myself`);
-
-    if (client.user.id === targetUser.id)
-      return interaction.reply({
-        embeds: [botKick],
-        ephemeral: true
-      });
-
-    const targetMember = await interaction.guild.members.cache.get(
-      targetUser.id
-    );
 
     const notInGuild = new EmbedBuilder()
       .setTitle(`${emojis.ERROR} You can't do that`)
@@ -83,71 +59,119 @@ module.exports = class KickCommand extends SlashCommand {
         ephemeral: true
       });
 
-    const AdminPerms = new EmbedBuilder()
+    const ownerKick = new EmbedBuilder()
       .setTitle(`${emojis.ERROR} You can't do that`)
       .setColor(colors.ERRORRED)
-      .setDescription(`I cannot kick an admin`);
+      .setDescription(`You can't kick the owner of this server!`);
 
-    if (targetMember.permissions.has(PermissionFlagsBits.Administrator))
+    if (targetMember.id === interaction.guild.ownerId)
       return interaction.reply({
-        embeds: [AdminPerms],
+        embeds: [ownerKick],
         ephemeral: true
       });
-    if (interaction.user.id !== interaction.guild.ownerId) {
-      const botPosition = interaction.guild.members.me.roles.highest.position;
-      const targetPosition = targetMember.roles.highest.position;
-      const commandUserPosition = interaction.member.roles.highest.position;
 
-      const targetHigher = new EmbedBuilder()
+    const selfKick = new EmbedBuilder()
+      .setTitle(`${emojis.ERROR} You can't do that`)
+      .setColor(colors.ERRORRED)
+      .setDescription(
+        `You cannot kick yourself, if you want to leave, there's a leave button.`
+      );
+
+    if (targetMember.id === interaction.user.id)
+      return interaction.reply({
+        embeds: [selfKick],
+        ephemeral: true
+      });
+
+    const botKick = new EmbedBuilder()
+      .setTitle(`${emojis.ERROR} You can't do that`)
+      .setColor(colors.ERRORRED)
+      .setDescription(`I can't kick myself from this server!`);
+
+    if (targetMember.id === client.user.id)
+      return interaction.reply({
+        embeds: [botKick],
+        ephemeral: true
+      });
+
+    const serverSettingsDocs = await ServerSettings.findOne({
+      guildId: interaction.guild.id
+    });
+
+    const adminKick = new EmbedBuilder()
+      .setTitle(`${emojis.ERROR} You can't do that`)
+      .setColor(colors.ERRORRED)
+      .setDescription(
+        `I can't kick an admin, if you'd like to turn off this feature please change it in the bot server settings using ${CommandLinks.ServerSettings}`
+      );
+
+    if (
+      (!serverSettingsDocs ||
+        (serverSettingsDocs && !serverSettingsDocs.AdminKick)) &&
+      targetMember.permissions.has(PermissionFlagsBits.Administrator) &&
+      interaction.member.id !== interaction.guild.ownerId
+    )
+      return interaction.reply({
+        embeds: [adminKick],
+        ephemeral: true
+      });
+
+    const botPosition = interaction.guild.members.me.roles.highest.position;
+    const targetPosition = targetMember.roles.highest.position;
+
+    if (interaction.member.id !== interaction.guild.ownerId) {
+      const commandAuthorPosition = interaction.member.roles.highest.position;
+
+      const authorLower = new EmbedBuilder()
         .setTitle(`${emojis.ERROR} You can't do that`)
         .setColor(colors.ERRORRED)
         .setDescription(
-          `${targetMember.user.username}'s position is higher or equal than yours.`
+          `${targetMember.user.username}'s position is higher or equal to yours.`
         );
 
-      if (commandUserPosition <= targetPosition)
+      if (commandAuthorPosition <= targetPosition)
         return interaction.reply({
-          embeds: [targetHigher],
-          ephemeral: true
-        });
-
-      const targetHigherThanBot = new EmbedBuilder()
-        .setTitle(`${emojis.ERROR} You can't do that`)
-        .setColor(colors.ERRORRED)
-        .setDescription(
-          `${targetMember.user.username}'s position is higher or equal than mine.`
-        );
-
-      if (botPosition <= targetPosition)
-        return interaction.reply({
-          embeds: [targetHigherThanBot],
+          embeds: [authorLower],
           ephemeral: true
         });
     }
-    const kickData =
-      (await KickSchema.findOne({
-        userID: targetMember.id,
-        guildID: interaction.guild.id
-      })) || undefined;
 
-    const caseID = `${kickData ? kickData.TotalCases + 1 : 1}`;
-
-    const UserKicked = new EmbedBuilder()
-      .setTitle(`A user has been kicked`)
+    const botLower = new EmbedBuilder()
+      .setTitle(`${emojis.ERROR} You can't do that`)
       .setColor(colors.ERRORRED)
-      .addFields(
+      .setDescription(
+        `${targetMember.user.username}'s position is higher or equal to mine.`
+      );
+
+    if (botPosition <= targetPosition)
+      return interaction.reply({
+        embeds: [botLower],
+        ephemeral: true
+      });
+
+    const kickData = await KickSchema.findOne({
+      userId: targetMember.id,
+      guildId: interaction.guild.id
+    });
+
+    const caseIDIdentifier = getLastDigits(interaction.guild.id, 3);
+
+    const userKicked = new EmbedBuilder()
+      .setTitle(`${emojis.VERIFY} User Kicked`)
+      .setColor(colors.DEFAULT)
+      .setFields(
         {
           name: "Moderator:",
           value: `${interaction.user.tag} (${interaction.user.id})`,
           inline: true
         },
         {
-          name: "Target Details:",
-          value: `${targetUser.tag} (${targetUser.id})`,
+          name: "Target:",
+          value: `${targetMember.user.tag} (${targetMember.id})`,
           inline: true
         },
         {
-          name: "Kick Reason:",
+          name: "Reason:",
           value: `${kickReason}`,
           inline: true
         },
@@ -158,7 +182,9 @@ module.exports = class KickCommand extends SlashCommand {
         },
         {
           name: "Case ID:",
-          value: `#KN${caseID}`,
+          value: `#KN${
+            kickData ? kickData.TotalCases + 1 : 1
+          }GI${caseIDIdentifier}`,
           inline: true
         },
         {
@@ -173,33 +199,31 @@ module.exports = class KickCommand extends SlashCommand {
       });
 
     if (kickData) {
-      await kickData.updateOne({
-        TotalCases: kickData.TotalCases + 1
-      });
-
-      await kickData.Cases.push(`#KN${caseID}`);
-      await kickData.Reasons.push(`${kickReason}`);
-
-      await kickData.save();
-
       await interaction.reply({
-        embeds: [UserKicked]
+        embeds: [userKicked]
       });
+
+      kickData.TotalCases += 1;
+      kickData.Cases.push(
+        `#KN${kickData ? kickData.TotalCases : 1}GI${caseIDIdentifier}`
+      );
+      kickData.Reasons.push(kickReason);
+      await kickData.save();
 
       return targetMember.kick(kickReason);
     } else {
-      const newKickData = new KickSchema({
-        userID: targetMember.id,
-        guildID: interaction.guild.id,
-        Cases: [`#KN${caseID}`],
-        Reasons: [`${kickReason}`],
-        TotalCases: 1
+      const newData = new KickSchema({
+        userId: targetMember.id,
+        guildId: interaction.guild.id,
+        TotalCases: 1,
+        Cases: [`#KN1GI${caseIDIdentifier}`],
+        Reasons: [`${kickReason}`]
       });
 
-      await newKickData.save();
+      await newData.save();
 
       await interaction.reply({
-        embeds: [UserKicked]
+        embeds: [userKicked]
       });
 
       return targetMember.kick(kickReason);
