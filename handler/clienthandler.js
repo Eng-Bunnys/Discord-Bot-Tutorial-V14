@@ -30,11 +30,14 @@ class GBFClient extends Client {
       this.slashCommands.filter((s) => !s.development),
       this
     );
-
+      
     if (guildCommands.length) {
-      const TestServerMain = await this.guilds.fetch("1073039570448424991");
-      //guildCommands
-      await TestServerMain.commands.set(guildCommands);
+      if (this.configs.TestGuilds.length > 0) {
+        for (let i = 0; i < this.configs.TestGuilds.length; i++) {
+          let testServer = await this.guilds.fetch(this.configs.TestGuilds[i]);
+          await testServer.commands.set(guildCommands);
+        }
+      }
     } //globalCommands
     if (globalCommands.length)
       await this.application.commands.set(globalCommands);
@@ -100,7 +103,7 @@ function toApplicationCommand(collection) {
       name: s.name,
       description: s.description,
       options: s.options,
-      defaultPermission: s.devOnly ? false : s.defaultPermission
+      defaultPermission: s.development ? false : true
     };
   });
 }
