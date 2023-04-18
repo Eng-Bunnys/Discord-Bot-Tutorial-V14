@@ -12,11 +12,12 @@ class GBFSlash {
       options = [],
       defaultPermission = true,
       devOnly = false,
+      Partner = false,
+      devBypass = false,
       userPermission = [],
       botPermission = [],
       cooldown = 0,
       development,
-      Partner = false,
       groups = null,
       subcommands = null
     }
@@ -30,6 +31,7 @@ class GBFSlash {
     this.options = options;
     this.defaultPermission = defaultPermission;
     this.devOnly = devOnly;
+    this.devBypass = devBypass;
     this.userPermission = userPermission;
     this.botPermission = botPermission;
     this.cooldown = cooldown;
